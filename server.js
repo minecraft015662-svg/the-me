@@ -8,7 +8,13 @@ if (!/^https?:\/\//.test(PUB)) { console.error('Set PUBLIC_URL, e.g. https://lic
 const ROOT = __dirname, DB = path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'licenses.json');
 fs.mkdirSync(path.dirname(DB), { recursive: true });
 let lic = []; try { lic = JSON.parse(fs.readFileSync(DB, 'utf8')); } catch (e) {}
-const save = () => { fs.writeFileSync(DB + '.tmp', JSON.stringify(lic, null, 1)); fs.renameSync(DB + '.tmp', DB); };
+const RU = process.env.UPSTASH_REDIS_REST_URL, RT = process.env.UPSTASH_REDIS_REST_TOKEN;
+const rcall = cmd => fetch(RU, { method: 'POST', headers: { Authorization: 'Bearer ' + RT }, body: JSON.stringify(cmd) }).then(r => r.json());
+const save = () => {
+  fs.writeFileSync(DB + '.tmp', JSON.stringify(lic, null, 1)); fs.renameSync(DB + '.tmp', DB);
+  if (RU && RT) rcall(['SET', 'licenses', JSON.stringify(lic)]).catch(() => {});
+};
+const ready = (RU && RT) ? rcall(['GET', 'licenses']).then(d => { if (d.result) lic = JSON.parse(d.result); }).catch(() => {}) : Promise.resolve();
 const h = s => crypto.createHash('sha256').update(String(s)).digest();
 const eq = (a, b) => crypto.timingSafeEqual(h(a), h(b));
 const hits = new Map();
@@ -109,4 +115,4 @@ const server = http.createServer(async (req, res) => {
     send(res, 404, { error: 'not found' });
   } catch (e) { send(res, 400, { error: 'bad request' }); }
 });
-server.listen(PORT, process.env.HOST || '127.0.0.1', () => console.log('Sarthak34 running on port ' + PORT + ' (put HTTPS in front: ' + PUB + ')'));
+ready.then(() => server.listen(PORT, process.env.HOST || '127.0.0.1', () => console.log('Sarthak34 running on port ' + PORT + ' (put HTTPS in front: ' + PUB + ')')));
